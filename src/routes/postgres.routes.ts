@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { pgPool } from "../db/postgres.js";
+import { UserService } from "../services/user.service.js";
 
 export const postgresRouter = Router();
 
@@ -23,23 +24,12 @@ postgresRouter.get("/health", async (_req: Request, res: Response) => {
 
 postgresRouter.get("/users", async (_req: Request, res: Response) => {
   try {
-    await pgPool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    const result = await pgPool.query(
-      "SELECT id, name, email, created_at FROM users ORDER BY id ASC"
-    );
+    const users = await UserService.getPostgresUsers();
 
     res.json({
       database: "postgresql",
-      count: result.rowCount ?? 0,
-      data: result.rows,
+      count: users.length,
+      data: users,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -55,30 +45,17 @@ postgresRouter.post("/users", async (req: Request, res: Response) => {
   try {
     const { name, email } = req.body as { name?: string; email?: string };
 
-    if (!name || !email) {
-      res.status(400).json({ message: "name and email are required" });
+    const validation = UserService.validate({ name, email });
+    if (!validation.isValid) {
+      res.status(400).json({ message: validation.error });
       return;
     }
 
-    await pgPool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-
-    const result = await pgPool.query(
-      `INSERT INTO users (name, email)
-       VALUES ($1, $2)
-       RETURNING id, name, email, created_at`,
-      [name, email]
-    );
+    const user = await UserService.createPostgresUser(name!, email!);
 
     res.status(201).json({
       database: "postgresql",
-      data: result.rows[0],
+      data: user,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
