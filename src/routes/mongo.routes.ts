@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { getMongoDb } from "../db/mongo.js";
+import { UserService } from "../services/user.service.js";
 
 export const mongoRouter = Router();
 
@@ -24,12 +25,7 @@ mongoRouter.get("/health", async (_req: Request, res: Response) => {
 
 mongoRouter.get("/users", async (_req: Request, res: Response) => {
   try {
-    const db = getMongoDb();
-    const users = await db
-      .collection("users")
-      .find({})
-      .project({ name: 1, email: 1, createdAt: 1 })
-      .toArray();
+    const users = await UserService.getMongoUsers();
 
     res.json({
       database: "mongodb",
@@ -50,23 +46,17 @@ mongoRouter.post("/users", async (req: Request, res: Response) => {
   try {
     const { name, email } = req.body as { name?: string; email?: string };
 
-    if (!name || !email) {
-      res.status(400).json({ message: "name and email are required" });
+    const validation = UserService.validate({ name, email });
+    if (!validation.isValid) {
+      res.status(400).json({ message: validation.error });
       return;
     }
 
-    const db = getMongoDb();
-    const doc = {
-      name,
-      email,
-      createdAt: new Date(),
-    };
-
-    const result = await db.collection("users").insertOne(doc);
+    const user = await UserService.createMongoUser(name!, email!);
 
     res.status(201).json({
       database: "mongodb",
-      data: { _id: result.insertedId, ...doc },
+      data: user,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
